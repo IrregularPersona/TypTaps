@@ -12,11 +12,17 @@ pub enum Message {
     OpenDir,
     DirOpened(Result<PathBuf, String>),
 
-    // we need to change this later
-    SaveFile,
     ReloadRequested(std::time::Instant),
 
     // file tree
     ToggleDir(PathBuf),
     DirLoaded(PathBuf, Vec<crate::app::TreeEntry>),
+
+    // pdf rendering
+    PdfRendered(Result<Vec<iced::widget::image::Handle>, String>),
+
+    // zoom
+    ZoomIn,
+    ZoomOut,
+    ResetZoom,
 }

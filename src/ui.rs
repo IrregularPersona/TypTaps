@@ -1,8 +1,7 @@
 use crate::app::{TreeEntry, TypTaps};
 use crate::message::Message;
 use crate::utils::get_icons;
-use iced::widget::image::viewer;
-use iced::widget::{Space, button, column, container, row, scrollable, text, text_editor};
+use iced::widget::{Space, button, column, container, image, row, scrollable, text, text_editor};
 use iced::{Alignment, Element, Length, Theme};
 
 pub fn view(app: &TypTaps) -> Element<'_, Message> {
@@ -27,7 +26,7 @@ pub fn view(app: &TypTaps) -> Element<'_, Message> {
     };
 
     let file_tree_panel = container(file_tree_content)
-        .width(Length::Fixed(200.0)) // Increased width for better tree visibility
+        .width(Length::Fixed(200.0))
         .height(Length::FillPortion(8))
         .style(panel_style);
 
@@ -86,16 +85,44 @@ pub fn view(app: &TypTaps) -> Element<'_, Message> {
     .padding(5)
     .style(panel_style);
 
-    let preview_content: Element<Message> = if let Some(handle) = &app.image_handle {
-        viewer(handle.clone()).min_scale(1.0).max_scale(10.0).into()
+    let preview_content: Element<Message> = if !app.pages.is_empty() {
+        scrollable(
+            column(
+                app.pages
+                    .iter()
+                    .map(|handle| {
+                        container(
+                            image::viewer(handle.clone())
+                                .width(Length::Fill)
+                                .height(Length::Fixed(800.0)),
+                        )
+                        .padding(10)
+                        .style(panel_style)
+                        .into()
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .spacing(10)
+            .align_x(Alignment::Center)
+            .width(Length::Fill),
+        )
+        .height(Length::Fill)
+        .into()
+    } else if app.file.is_some() {
+        container(text("Waiting to finish render...").size(18))
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into()
     } else {
-        iced::widget::text("Waiting for Typst...").into()
+        container(text("No PDF loaded").size(18))
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into()
     };
 
     let preview_col = container(preview_content)
-        .width(Length::Fill)
-        .center_x(Length::Fill)
-        .center_y(Length::Fill)
+        .width(Length::FillPortion(2))
+        .height(Length::Fill)
         .padding(10);
 
     column![
@@ -104,7 +131,10 @@ pub fn view(app: &TypTaps) -> Element<'_, Message> {
         row![
             file_tree_panel,
             Space::new().width(5),
-            column![code_panel, Space::new().height(5), status_bar,].height(Length::Fill),
+            container(
+                column![code_panel, Space::new().height(5), status_bar,].height(Length::Fill)
+            )
+            .width(Length::FillPortion(3)),
             Space::new().width(5),
             preview_col,
         ]

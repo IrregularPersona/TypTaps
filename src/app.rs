@@ -1,10 +1,10 @@
-use crate::pdfviewer::render_pdf_to_handle;
+use crate::pdfviewer::render_pdf_to_pages;
 use crate::{message::Message, ui};
-use iced::wgpu::wgt::AccelerationStructureUpdateMode;
 use iced::widget::{image, text_editor};
 use iced::{Task, Theme, time};
 use std::path::PathBuf;
-use std::time::Duration;
+use std::process::{Child, Command};
+use std::time::{Duration, SystemTime};
 
 #[derive(Debug, Clone)]
 pub enum TreeEntry {
@@ -42,7 +42,11 @@ pub struct TypTaps {
     pub cursor_line: usize,
     pub cursor_column: usize,
     pub file_tree: Vec<TreeEntry>,
-    pub image_handle: Option<image::Handle>,
+    pub pages: Vec<image::Handle>,
+    pub pdf_child: Option<Child>,
+    pub is_rendering: bool,
+    pub last_rendered_time: Option<SystemTime>,
+    pub zoom: f32,
 }
 
 impl Default for TypTaps {
@@ -53,7 +57,11 @@ impl Default for TypTaps {
             cursor_line: 1,
             cursor_column: 1,
             file_tree: Vec::new(),
-            image_handle: None,
+            pages: Vec::new(),
+            pdf_child: None,
+            is_rendering: false,
+            last_rendered_time: None,
+            zoom: 1.0,
         }
     }
 }
@@ -81,6 +89,11 @@ impl TypTaps {
                     .map(|line| line.len() + 1)
                     .unwrap_or(1);
 
+                if let Some(path) = &self.file {
+                    let content = self.content.text();
+                    let _ = std::fs::write(path, content);
+                }
+
                 Task::none()
             }
             Message::OpenFile => Task::perform(
@@ -101,6 +114,25 @@ impl TypTaps {
                 if let Ok(content) = std::fs::read_to_string(&path) {
                     self.content = text_editor::Content::with_text(&content);
                 }
+
+                if let Some(mut child) = self.pdf_child.take() {
+                    let _ = child.kill();
+                }
+
+                self.pages.clear();
+                self.is_rendering = false;
+                self.last_rendered_time = None;
+
+                match Command::new("typst").arg("watch").arg(&path).spawn() {
+                    Ok(child) => {
+                        self.pdf_child = Some(child);
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to start typst watch: {:?}", e);
+                        self.is_rendering = false;
+                    }
+                }
+
                 Task::none()
             }
             Message::FileOpened(Err(_)) => Task::none(),
@@ -119,13 +151,6 @@ impl TypTaps {
                 Message::DirLoaded(p, entries)
             }),
             Message::DirOpened(Err(_)) => Task::none(),
-            Message::SaveFile => {
-                if let Some(path) = &self.file {
-                    let content = self.content.text();
-                    let _ = std::fs::write(path, content);
-                }
-                Task::none()
-            }
             Message::ToggleDir(target_path) => {
                 let mut found_and_empty = false;
                 toggle_dir_recursive(&mut self.file_tree, &target_path, &mut found_and_empty);
@@ -143,7 +168,62 @@ impl TypTaps {
                 Task::none()
             }
             Message::ReloadRequested(_) => {
-                self.image_handle = render_pdf_to_handle(Some(self.file));
+                if self.is_rendering {
+                    return Task::none();
+                }
+
+                if let Some(path) = &self.file {
+                    let pdf_path = path.with_extension("pdf");
+                    if pdf_path.exists() {
+                        let metadata = std::fs::metadata(&pdf_path).ok();
+                        let mtime = metadata.and_then(|m| m.modified().ok());
+
+                        let needs_reload = match (mtime, self.last_rendered_time) {
+                            (Some(mt), Some(rt)) => mt > rt,
+                            (Some(_), None) => true,
+                            _ => false,
+                        };
+
+                        if needs_reload {
+                            self.is_rendering = true;
+                            let path_to_render = pdf_path.clone();
+                            return Task::perform(
+                                async move {
+                                    let res: Result<Vec<image::Handle>, String> =
+                                        tokio::task::spawn_blocking(move || {
+                                            render_pdf_to_pages(&path_to_render)
+                                                .map_err(|e| e.to_string())
+                                        })
+                                        .await
+                                        .map_err(|e| e.to_string())?;
+                                    res
+                                },
+                                Message::PdfRendered,
+                            );
+                        }
+                    }
+                }
+                Task::none()
+            }
+            Message::PdfRendered(result) => {
+                self.is_rendering = false;
+                self.last_rendered_time = Some(SystemTime::now());
+                if let Ok(pages) = result {
+                    self.pages = pages;
+                }
+                Task::none()
+            }
+            Message::ZoomIn => {
+                self.zoom = (self.zoom + 0.2).min(10.0);
+                Task::none()
+            }
+            Message::ZoomOut => {
+                self.zoom = (self.zoom - 0.2).max(0.1);
+                Task::none()
+            }
+            Message::ResetZoom => {
+                self.zoom = 1.0;
+                Task::none()
             }
         }
     }
@@ -159,14 +239,19 @@ impl TypTaps {
                     }) = event
                     {
                         if let iced::keyboard::Key::Character(s) = key {
-                            if s == "s" && modifiers.command() {
-                                return Some(Message::SaveFile);
+                            if modifiers.command() {
+                                match s.as_str() {
+                                    "+" | "=" => return Some(Message::ZoomIn),
+                                    "-" | "_" => return Some(Message::ZoomOut),
+                                    ")" | "0" => return Some(Message::ResetZoom),
+                                    _ => {}
+                                }
                             }
                         }
                     }
                     None
                 })
-                .filter_map(|msg| msg),
+                .filter_map(|msg: Option<Message>| msg),
             time::every(Duration::from_millis(100)).map(Message::ReloadRequested),
         ])
     }
@@ -200,7 +285,7 @@ async fn load_directory(path: PathBuf) -> (PathBuf, Vec<TreeEntry>) {
         }
     }
 
-    // Sort: Directories first, then files, both alphabetically
+    // maybe we need this, maybe not, idk
     entries.sort_by(|a, b| match (a, b) {
         (TreeEntry::Directory { .. }, TreeEntry::File { .. }) => std::cmp::Ordering::Less,
         (TreeEntry::File { .. }, TreeEntry::Directory { .. }) => std::cmp::Ordering::Greater,
