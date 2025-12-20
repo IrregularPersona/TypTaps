@@ -1,7 +1,10 @@
+use crate::pdfviewer::render_pdf_to_handle;
 use crate::{message::Message, ui};
-use iced::widget::text_editor;
-use iced::{Task, Theme};
+use iced::wgpu::wgt::AccelerationStructureUpdateMode;
+use iced::widget::{image, text_editor};
+use iced::{Task, Theme, time};
 use std::path::PathBuf;
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub enum TreeEntry {
@@ -39,6 +42,7 @@ pub struct TypTaps {
     pub cursor_line: usize,
     pub cursor_column: usize,
     pub file_tree: Vec<TreeEntry>,
+    pub image_handle: Option<image::Handle>,
 }
 
 impl Default for TypTaps {
@@ -49,6 +53,7 @@ impl Default for TypTaps {
             cursor_line: 1,
             cursor_column: 1,
             file_tree: Vec::new(),
+            image_handle: None,
         }
     }
 }
@@ -137,27 +142,33 @@ impl TypTaps {
                 update_dir_children_recursive(&mut self.file_tree, &path, entries);
                 Task::none()
             }
+            Message::ReloadRequested(_) => {
+                self.image_handle = render_pdf_to_handle(Some(self.file));
+            }
         }
     }
 
     pub fn subscription(&self) -> iced::Subscription<Message> {
-        iced::event::listen()
-            .map(|event| {
-                if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
-                    key,
-                    modifiers,
-                    ..
-                }) = event
-                {
-                    if let iced::keyboard::Key::Character(s) = key {
-                        if s == "s" && modifiers.command() {
-                            return Some(Message::SaveFile);
+        iced::Subscription::batch(vec![
+            iced::event::listen()
+                .map(|event| {
+                    if let iced::Event::Keyboard(iced::keyboard::Event::KeyPressed {
+                        key,
+                        modifiers,
+                        ..
+                    }) = event
+                    {
+                        if let iced::keyboard::Key::Character(s) = key {
+                            if s == "s" && modifiers.command() {
+                                return Some(Message::SaveFile);
+                            }
                         }
                     }
-                }
-                None
-            })
-            .filter_map(|msg| msg)
+                    None
+                })
+                .filter_map(|msg| msg),
+            time::every(Duration::from_millis(100)).map(Message::ReloadRequested),
+        ])
     }
 }
 
