@@ -9,4 +9,6 @@ pub enum Message {
     OpenDir,
     DirOpened(Result<PathBuf, String>),
     SaveFile,
+    ToggleDir(PathBuf),
+    DirLoaded(PathBuf, Vec<crate::app::TreeEntry>),
 }

@@ -1,7 +1,7 @@
-use iced::widget::{Space, button, column, container, row, text, text_editor};
+use iced::widget::{Space, button, column, container, row, text, text_editor, scrollable};
 use iced::{Alignment, Element, Length, Theme};
 use crate::message::Message;
-use crate::app::TypTaps;
+use crate::app::{TypTaps, TreeEntry};
 
 pub fn view(app: &TypTaps) -> Element<'_, Message> {
     let top_bar = container(row![
@@ -15,17 +15,25 @@ pub fn view(app: &TypTaps) -> Element<'_, Message> {
     ])
     .width(Length::Fill);
 
-    let file_tree_box = container(
-        text("File Tree\n(Coming Soon)")
-            .size(14)
-            .color([0.7, 0.7, 0.7]),
-    )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .padding(10);
+    let file_tree_content = if app.file_tree.is_empty() {
+        container(
+            text("No folder open")
+                .size(14)
+                .color([0.7, 0.7, 0.7]),
+        )
+        .padding(10)
+    } else {
+        container(
+            scrollable(
+                column(app.file_tree.iter().map(|entry| view_tree_entry(entry, 0)))
+                    .spacing(2)
+            )
+        )
+        .padding(5)
+    };
 
-    let file_tree_panel = container(file_tree_box)
-        .width(Length::Fixed(120.0))
+    let file_tree_panel = container(file_tree_content)
+        .width(Length::Fixed(200.0)) // Increased width for better tree visibility
         .height(Length::FillPortion(8))
         .style(panel_style);
 
@@ -114,5 +122,54 @@ pub fn panel_style(theme: &Theme) -> container::Style {
             radius: 2.0.into(),
         },
         ..Default::default()
+    }
+}
+
+fn view_tree_entry(entry: &TreeEntry, depth: u32) -> Element<'_, Message> {
+    match entry {
+        TreeEntry::File { name, path } => {
+            button(
+                text(name)
+                    .size(12)
+                    .wrapping(text::Wrapping::None)
+            )
+            .on_press(Message::FileOpened(Ok(path.clone())))
+            .style(button::text)
+            .padding(iced::Padding {
+                top: 2.0,
+                right: 5.0,
+                bottom: 2.0,
+                left: 5.0 + (depth * 12) as f32,
+            })
+            .width(Length::Fill)
+            .into()
+        }
+        TreeEntry::Directory { name, path, is_expanded, children } => {
+            let icon = if *is_expanded { "▼" } else { "▶" };
+            let header = button(
+                text(format!("{} {}", icon, name))
+                    .size(12)
+                    .wrapping(text::Wrapping::None)
+            )
+            .on_press(Message::ToggleDir(path.clone()))
+            .style(button::text)
+            .padding(iced::Padding {
+                top: 2.0,
+                right: 5.0,
+                bottom: 2.0,
+                left: 5.0 + (depth * 12) as f32,
+            })
+            .width(Length::Fill);
+
+            if *is_expanded {
+                let mut col = column![header].spacing(2);
+                for child in children {
+                    col = col.push(view_tree_entry(child, depth + 1));
+                }
+                col.into()
+            } else {
+                header.into()
+            }
+        }
     }
 }

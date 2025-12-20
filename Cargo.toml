@@ -6,3 +6,7 @@ edition = "2024"
 [dependencies]
 iced = { version = "0.14.0", features = ["tokio", "debug", "advanced", "highlighter", "svg", "image", "canvas"] }
 rfd = "0.16.0"
+
+pdfium-render = { version = "0.8.37", default-features = false, features = ["bindings", "image", "pdfium_7123"] }
+image = { version = "0.25", features = ["png"] }
+
