@@ -1,0 +1,11 @@
+[package]
+name = "minimal-typtaps"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dirs = "6.0.0"
+iced = { version = "0.14.0", features = ["tokio", "debug", "advanced", "svg", "canvas"] }
+iced-code-editor = "0.2"
+rfd = "0.16.0"
+
