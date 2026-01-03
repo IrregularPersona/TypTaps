@@ -1,18 +1,4 @@
 mod app;
-<<<<<<< HEAD
-<<<<<<< HEAD
-mod message;
-mod pdfviewer;
-mod ui;
-mod utils;
-
-use app::TypTaps;
-
-pub fn main() -> iced::Result {
-    iced::application(TypTaps::default, TypTaps::update, TypTaps::view)
-        .title("TypTaps - Minimal Typst Editor")
-        .theme(TypTaps::theme)
-=======
 use app::TypTaps;
 use std::fs;
 
@@ -27,7 +13,6 @@ fn main() -> iced::Result {
     }
 
     iced::application(TypTaps::default, TypTaps::update, TypTaps::view)
->>>>>>> refactor/minimal-form
         .subscription(TypTaps::subscription)
         .run()
 }
