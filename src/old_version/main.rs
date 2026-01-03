@@ -1,5 +1,4 @@
 mod app;
-<<<<<<< HEAD
 mod message;
 mod pdfviewer;
 mod ui;

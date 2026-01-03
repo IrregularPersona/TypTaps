@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 use crate::pdfviewer::render_pdf_to_pages;
 use crate::{message::Message, ui};
 use iced::widget::{image, text_editor};
@@ -178,6 +177,7 @@ impl TypTaps {
                     if pdf_path.exists() {
                         let metadata = std::fs::metadata(&pdf_path).ok();
                         let mtime = metadata.and_then(|m| m.modified().ok());
+
                         let needs_reload = match (mtime, self.last_rendered_time) {
                             (Some(mt), Some(rt)) => mt > rt,
                             (Some(_), None) => true,

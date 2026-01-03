@@ -9,3 +9,5 @@ pdfium-render = { version = "0.8.37", default-features = false, features = ["bin
 image = { version = "0.25", features = ["png"] }
 rfd = "0.16.0"
 tokio = { version = "1", features = ["full"] }
+
+
