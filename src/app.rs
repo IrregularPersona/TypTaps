@@ -1,12 +1,9 @@
+use iced::widget::{Space, button, column, container, row, scrollable, svg, text};
+use iced::{Alignment, Element, Subscription, Task, time};
+use iced_code_editor::{CodeEditor, Message as EditorMessage};
 use std::path::PathBuf;
 use std::process::{Child, Command};
-use std::time::SystemTime;
-
-use iced::widget::{
-    button, column, container, row, scrollable, Space, svg, text,
-};
-use iced::{time, Alignment, Element, Subscription, Task};
-use iced_code_editor::{CodeEditor, Message as EditorMessage};
+use std::time::{Duration, Instant, SystemTime};
 
 pub struct TypTaps {
     pub editor: CodeEditor,
@@ -15,12 +12,14 @@ pub struct TypTaps {
     pub is_rendering: bool,
     pub last_rendered_time: Option<SystemTime>,
     pub watch_process: Option<Child>,
+    pub is_dirty: bool,
+    pub last_save_time: Instant,
+    // pub preview_scroll_id: scrollable::Id::unique(),
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     EditorEvent(EditorMessage),
-
     OpenFile,
     FileOpened(Result<PathBuf, String>),
     Tick,
@@ -35,6 +34,8 @@ impl Default for TypTaps {
             is_rendering: false,
             last_rendered_time: None,
             watch_process: None,
+            is_dirty: false,
+            last_save_time: Instant::now(),
         }
     }
 }
@@ -44,13 +45,7 @@ impl TypTaps {
         match message {
             Message::EditorEvent(event) => {
                 let task = self.editor.update(&event).map(Message::EditorEvent);
-                if let Some(path) = &self.file {
-                    let content = self.editor.content();
-                    if let Err(e) = std::fs::write(path, content) {
-                        eprintln!("Autosave error: {}", e);
-                    }
-                }
-
+                self.is_dirty = true;
                 task
             }
             Message::OpenFile => Task::perform(
@@ -125,7 +120,7 @@ impl TypTaps {
                         .file_stem()
                         .map(|s| s.to_string_lossy().to_string())
                         .unwrap_or_else(|| "output".to_string());
-                    
+
                     let first_page = cache_dir.join(format!("{}-1.svg", stem));
 
                     if first_page.exists() {
@@ -144,7 +139,9 @@ impl TypTaps {
                             loop {
                                 let page_path = cache_dir.join(format!("{}-{}.svg", stem, i));
                                 if page_path.exists() {
-                                    new_pages.push(svg::Handle::from_path(page_path));
+                                    if let Ok(content) = std::fs::read(&page_path) {
+                                        new_pages.push(svg::Handle::from_memory(content));
+                                    }
                                     i += 1;
                                 } else {
                                     break;
@@ -160,13 +157,32 @@ impl TypTaps {
                         if output_path.exists() {
                             let metadata = std::fs::metadata(&output_path).ok();
                             let mtime = metadata.and_then(|m| m.modified().ok());
-                            if self.last_rendered_time.map_or(true, |rt| mtime.map_or(false, |mt| mt > rt)) {
-                                self.pages = vec![svg::Handle::from_path(output_path)];
-                                self.last_rendered_time = mtime;
+                            if self
+                                .last_rendered_time
+                                .map_or(true, |rt| mtime.map_or(false, |mt| mt > rt))
+                            {
+                                if let Ok(content) = std::fs::read(&output_path) {
+                                    self.pages = vec![svg::Handle::from_memory(content)];
+                                    self.last_rendered_time = mtime;
+                                }
                             }
                         }
                     }
                 }
+
+                // Autosave logic
+                if self.is_dirty && self.last_save_time.elapsed() >= Duration::from_millis(90) {
+                    if let Some(path) = &self.file {
+                        let content = self.editor.content();
+                        if let Err(e) = std::fs::write(path, content) {
+                            eprintln!("Autosave error: {}", e);
+                        } else {
+                            self.is_dirty = false;
+                            self.last_save_time = Instant::now();
+                        }
+                    }
+                }
+
                 Task::none()
             }
         }
@@ -192,8 +208,8 @@ impl TypTaps {
                 column(self.pages.iter().map(|handle| {
                     container(
                         svg(handle.clone())
-                            .width(iced::Length::Fill)
-                            .height(iced::Length::Fill),
+                            .width(iced::Length::Fixed(1400.0))
+                            .height(iced::Length::Fixed(1600.0)),
                     )
                     .padding(10)
                     .into()
@@ -203,6 +219,7 @@ impl TypTaps {
                 .width(iced::Length::Fill),
             )
             .height(iced::Length::Fill)
+            .auto_scroll(true)
             .into()
         } else if self.file.is_some() {
             container(text("Waiting to finish render...").size(18))
@@ -239,6 +256,6 @@ impl TypTaps {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        time::every(std::time::Duration::from_millis(100)).map(|_| Message::Tick)
+        time::every(std::time::Duration::from_millis(60)).map(|_| Message::Tick)
     }
 }
