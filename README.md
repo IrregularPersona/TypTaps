@@ -15,7 +15,7 @@ cargo run --release
 ## Features
 
 - **Live Watch**: Auto-reloads on file changes (Not super consistent).
-- **Integrated Preview**: PDF viewer with zoom and pan (Buggy at best).
+- **Integrated Preview**: A Live PDF viewer.
 
 ## Contributing
 
